@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dungeons of Daggorath</title>
+  <link rel="stylesheet" href="css/game.css">
+</head>
+<body>
+  <div id="app">
+    <header class="title-bar">
+      <h1>Dungeons of Daggorath</h1>
+      <span class="hint">Type commands · Enter to run · empty Enter locates you on the map</span>
+    </header>
+
+    <main class="game-shell">
+      <section class="viewport-wrap">
+        <canvas id="viewport" width="960" height="563" aria-label="Dungeon view"></canvas>
+        <div id="overlay" class="overlay hidden" aria-live="polite"></div>
+      </section>
+
+      <section class="status-bar" aria-label="Status">
+        <span id="left-hand" class="hand">EMPTY</span>
+        <div class="heart-wrap">
+          <canvas id="heart" width="120" height="24" aria-hidden="true"></canvas>
+          <span id="heart-label" class="heart-label">♥</span>
+        </div>
+        <span id="right-hand" class="hand">EMPTY</span>
+      </section>
+
+      <div class="map-text-row">
+        <section class="map-wrap" aria-label="Dungeon map">
+          <canvas id="minimap" width="512" height="512" aria-label="Level map"></canvas>
+          <div id="map-legend" class="map-legend" aria-label="Map legend"></div>
+        </section>
+
+        <section class="text-panel">
+          <form id="command-form" class="command-form" autocomplete="off">
+            <label for="command-input" class="sr-only">Command</label>
+            <span class="prompt">&gt;</span>
+            <input id="command-input" type="text" spellcheck="false" autocapitalize="off" maxlength="32" autofocus>
+          </form>
+          <pre id="log" class="log" aria-live="polite"></pre>
+        </section>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <button type="button" id="btn-help">Commands</button>
+      <button type="button" id="btn-restart">Restart</button>
+      <span id="level-label">Level 1</span>
+    </footer>
+  </div>
+
+  <dialog id="help-dialog" aria-labelledby="help-title">
+    <h2 id="help-title">Keyboard Commands</h2>
+    <p class="help-hint">Press <kbd>Esc</kbd> to dismiss · click anywhere to return to the command line</p>
+    <div class="help-sections">
+      <section>
+        <h3>Movement</h3>
+        <ul>
+          <li><code>M</code> — move forward</li>
+          <li><code>M B</code> — move back</li>
+          <li><code>M L</code> / <code>M R</code> — sidestep left / right</li>
+          <li><code>T L</code> / <code>T R</code> / <code>T A</code> — turn left, right, around</li>
+          <li><code>C U</code> / <code>C D</code> — climb up / down</li>
+        </ul>
+      </section>
+      <section>
+        <h3>Items</h3>
+        <ul>
+          <li><code>G R SW</code> — get item (hand + class, e.g. sword)</li>
+          <li><code>P R SW</code> — pull item from pack (or creature ahead)</li>
+          <li><code>D R</code> — drop right-hand item</li>
+          <li><code>S L</code> — stow left-hand item in pack</li>
+          <li><code>U R</code> — use item (torch, flask, …)</li>
+          <li><code>A R</code> — attack with right hand</li>
+        </ul>
+      </section>
+      <section>
+        <h3>Magic</h3>
+        <ul>
+          <li><code>R R</code> — reveal ring or scroll</li>
+          <li><code>I FIRE</code> / <code>I ICE</code> / <code>I ENERGY</code> / <code>I FINAL</code> — incant ring (right hand)</li>
+        </ul>
+      </section>
+      <section>
+        <h3>Info &amp; game</h3>
+        <ul>
+          <li><code>E</code> — examine ahead, floor, pack, and hands (<code>E R</code> for one hand)</li>
+          <li><code>L</code> — look (reveal map)</li>
+          <li><kbd>Enter</kbd> (empty) / <code>F</code> — flash your position on the map</li>
+          <li><code>ZS</code> / <code>ZL</code> — save / load</li>
+          <li><code>THEME</code> — choose visual theme</li>
+          <li><code>CRE</code> / <code>CREATURES</code> — creature bestiary</li>
+        </ul>
+      </section>
+      <section>
+        <h3>Abbreviations</h3>
+        <p class="help-abbrev">Hands: <code>L</code> left · <code>R</code> right</p>
+        <p class="help-abbrev">Classes: <code>T</code> torch · <code>SW</code> sword · <code>SH</code> shield · <code>F</code> flask · <code>SC</code> scroll · <code>R</code> ring</p>
+      </section>
+    </div>
+  </dialog>
+
+  <dialog id="theme-dialog" aria-labelledby="theme-title">
+    <h2 id="theme-title">Visual Theme</h2>
+    <p class="help-hint">↑↓ move · <kbd>Enter</kbd> / <kbd>Space</kbd> apply · <kbd>Esc</kbd> dismiss</p>
+    <ul id="theme-list" class="theme-list" role="listbox" aria-label="Available themes"></ul>
+  </dialog>
+
+  <dialog id="creatures-dialog" aria-labelledby="creatures-title">
+    <h2 id="creatures-title">Creature Bestiary</h2>
+    <p class="help-hint">Weakest to strongest · <kbd>Esc</kbd> to dismiss</p>
+    <ul id="creatures-list" class="creatures-list"></ul>
+  </dialog>
+
+  <script type="module" src="js/main.js?v=walls9"></script>
+</body>
+</html>
