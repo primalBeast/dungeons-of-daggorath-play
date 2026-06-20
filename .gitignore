@@ -1,0 +1,8 @@
+node_modules/
+terminals/
+mcps/
+research/
+.push-batches/
+.DS_Store
+Thumbs.db
+*.log
