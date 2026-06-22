@@ -392,6 +392,7 @@ export class Renderer {
         drawTexturedQuad(ctx, tile, points, { u0: 0, v0: 0, u1: 1, v1: 1 });
         doorPanels.push(points);
       } else {
+        if (source === 'nightmare') ctx.filter = 'contrast(1.18) brightness(1.04)';
         drawTexturedQuad(ctx, tile, points);
       }
       ctx.filter = 'none';
@@ -511,8 +512,95 @@ export class Renderer {
     return slices;
   }
 
-  drawViewportSlice(game, slice, pdir, w, h, drawnCreatures) {
-    const { dungeon, level } = game;
+  drawSideWallOccluder(side, range, w, h, alpha) {
+    const vla = side === 'left' ? V.LWAL : V.RWAL;
+    this.fillWallTexture(HF.WAL, vla, range, w, h, alpha);
+  }
+
+  collectPeekWedgeVerts(side, range, w, h) {
+    const vla = side === 'left' ? V.LPEEK : V.RPEEK;
+    const verts = [];
+    let ctr = 2;
+    const n = vla[1];
+    for (let i = 0; i < n; i++) {
+      verts.push({
+        x: this.scaleX(vla[ctr], range, w),
+        y: this.scaleY(vla[ctr + 1], range, h),
+      });
+      ctr += 2;
+    }
+    return verts;
+  }
+
+  sideOpeningVerts(side, range, w, h) {
+    const vla = side === 'left' ? V.LPAS : V.RPAS;
+    const verts = [];
+    let ctr = 2;
+    const n = vla[1];
+    for (let i = 0; i < n; i++) {
+      verts.push({
+        x: this.scaleX(vla[ctr], range, w),
+        y: this.scaleY(vla[ctr + 1], range, h),
+      });
+      ctr += 2;
+    }
+    return verts;
+  }
+
+  sideOpeningAnchor(side, range, w, h) {
+    const verts = this.sideOpeningVerts(side, range, w, h);
+    if (verts.length < 4) return { x: w * 0.2, y: h * 0.5 };
+    // Inner edge of the portal (the side that faces the corridor we're looking down).
+    if (side === 'left') {
+      return {
+        x: (verts[1].x + verts[2].x) * 0.5,
+        y: (verts[1].y + verts[2].y) * 0.5,
+      };
+    }
+    return {
+      x: (verts[1].x + verts[2].x) * 0.5,
+      y: (verts[1].y + verts[2].y) * 0.5,
+    };
+  }
+
+  sideOpeningBounds(verts) {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const v of verts) {
+      minX = Math.min(minX, v.x);
+      minY = Math.min(minY, v.y);
+      maxX = Math.max(maxX, v.x);
+      maxY = Math.max(maxY, v.y);
+    }
+    return { minX, minY, maxX, maxY, w: maxX - minX, h: maxY - minY };
+  }
+
+  clipSideOpening(side, range, w, h) {
+    const verts = this.sideOpeningVerts(side, range, w, h);
+    if (verts.length < 3) return;
+    const ctx = this.ctx;
+    ctx.beginPath();
+    ctx.moveTo(verts[0].x, verts[0].y);
+    for (let i = 1; i < verts.length; i++) ctx.lineTo(verts[i].x, verts[i].y);
+    ctx.closePath();
+    ctx.clip();
+  }
+
+  clipPeekWedge(side, range, w, h) {
+    const verts = this.collectPeekWedgeVerts(side, range, w, h);
+    if (verts.length < 3) return;
+    const ctx = this.ctx;
+    ctx.beginPath();
+    ctx.moveTo(verts[0].x, verts[0].y);
+    for (let i = 1; i < verts.length; i++) ctx.lineTo(verts[i].x, verts[i].y);
+    ctx.closePath();
+    ctx.clip();
+  }
+
+  drawViewportSliceWalls(game, slice, pdir, w, h) {
+    const { dungeon } = game;
     const { range, row, col, alpha, nb } = slice;
     const sides = [
       nb[(pdir + 3) & 3],
@@ -525,6 +613,10 @@ export class Renderer {
       const drawType = wt === HF.SDR ? HF.WAL : wt;
       const vecs = WALL_VEC[drawType];
       const key = i === 0 ? 'L' : i === 1 ? 'F' : 'R';
+      // Solid side face occludes peek sprites drawn in the prior pass (LPAS is an opening, not a mask).
+      if (this.wallTextureEnabled() && wt === HF.PAS && (i === 0 || i === 2)) {
+        this.drawSideWallOccluder(i === 0 ? 'left' : 'right', range, w, h, alpha);
+      }
       this.drawWallVectorList(wt, vecs[key], range, w, h, alpha);
     }
 
@@ -540,6 +632,16 @@ export class Renderer {
     } else {
       this.drawVectorList(V.CEIL, range, w, h, alpha * 0.7, 'ceiling');
     }
+  }
+
+  drawViewportSlice(game, slice, pdir, w, h, drawnCreatures) {
+    const { level } = game;
+    const { range, row, col, alpha } = slice;
+
+    // Peeks behind this slice's walls — nearer walls paint over them next.
+    this.drawCreaturePeeks(game, row, col, pdir, range, w, h, alpha, drawnCreatures, 'behind');
+
+    this.drawViewportSliceWalls(game, slice, pdir, w, h);
 
     const cidx = game.creatures.atCell(row, col);
     if (cidx >= 0) {
@@ -547,7 +649,7 @@ export class Renderer {
       drawnCreatures.add(cidx);
     }
 
-    this.drawCreaturePeeks(game, row, col, pdir, range, w, h, alpha, drawnCreatures);
+    this.drawCreaturePeeks(game, row, col, pdir, range, w, h, alpha, drawnCreatures, 'front');
 
     const obj = game.objects.findAt(level, row, col);
     if (obj && alpha > 0.2) {
@@ -559,7 +661,7 @@ export class Renderer {
     const slices = this.collectViewportSlices(game, pdir);
     const drawnCreatures = new Set();
 
-    // Far slices first so nearer walls and creatures paint on top.
+    // Far slices first; within each slice: behind-peeks → walls → creatures.
     for (let i = slices.length - 1; i >= 0; i--) {
       this.drawViewportSlice(game, slices[i], pdir, w, h, drawnCreatures);
     }
@@ -694,7 +796,7 @@ export class Renderer {
     drawn.add(cidx);
   }
 
-  drawCreaturePeeks(game, row, col, pdir, range, w, h, alpha, drawn) {
+  drawCreaturePeeks(game, row, col, pdir, range, w, h, alpha, drawn, layer) {
     const dungeon = game.dungeon;
     const nb = this.cellNeighbors(dungeon, row, col);
     const fwdOpen = nb[pdir] === HF.PAS;
@@ -706,25 +808,15 @@ export class Renderer {
 
       const sr = row + STPTAB[sideDir * 2];
       const sc = col + STPTAB[sideDir * 2 + 1];
-      const adjMode = sideOpen ? 'opening' : 'edge';
-      this.tryPeekCreature(
-        game, sr, sc, range, w, h, alpha * (sideOpen ? 0.9 : 0.95), side, adjMode, drawn,
-      );
-
-      if (fwdOpen && !sideOpen) {
-        const dr = row + STPTAB[pdir * 2] + STPTAB[sideDir * 2];
-        const dc = col + STPTAB[pdir * 2 + 1] + STPTAB[sideDir * 2 + 1];
-        const peekRange = Math.min(range + 1, MAX_RANGE);
-        const peekAlpha = this.fadeAlpha(peekRange, game.player);
-        if (peekAlpha > 0.02) {
-          this.tryPeekCreature(
-            game, dr, dc, peekRange, w, h, peekAlpha * 0.9, side, 'edge', drawn,
-          );
-        }
+      // Side passage peek: sprite first, then walls paint over the hidden flank.
+      if (sideOpen && layer === 'behind') {
+        this.tryPeekCreature(
+          game, sr, sc, range, w, h, alpha * 0.9, side, 'opening', drawn,
+        );
       }
     }
 
-    if (!fwdOpen) {
+    if (!fwdOpen && layer === 'behind') {
       for (const sideOff of [3, 1]) {
         const sideDir = (pdir + sideOff) & 3;
         const side = sideOff === 3 ? 'left' : 'right';
@@ -747,7 +839,121 @@ export class Renderer {
     }
   }
 
+  usesCreatureImages() {
+    return !!this.themeRenderer().creatureSpriteSource && !this.inverted;
+  }
+
+  clipForwardCorridor(range, w, h) {
+    const t = Math.min(1, range / 4);
+    const topInset = w * (0.2 + t * 0.07);
+    const botInset = w * (0.14 + t * 0.05);
+    const ctx = this.ctx;
+    ctx.beginPath();
+    ctx.moveTo(topInset, h * 0.34);
+    ctx.lineTo(w - topInset, h * 0.34);
+    ctx.lineTo(w - botInset, h);
+    ctx.lineTo(botInset, h);
+    ctx.closePath();
+    ctx.clip();
+  }
+
+  // Left hall → right half of sprite; right hall → left half of sprite.
+  peekVisibleImageHalf(passageSide) {
+    return passageSide === 'left' ? 'right' : 'left';
+  }
+
+  peekSpriteSourceCrop(passageSide, sprite) {
+    const sw = sprite.width;
+    const sh = sprite.height;
+    const half = Math.floor(sw * 0.5);
+    if (this.peekVisibleImageHalf(passageSide) === 'right') {
+      return { sx: half, sy: 0, sW: sw - half, sH: sh };
+    }
+    return { sx: 0, sy: 0, sW: half, sH: sh };
+  }
+
+  peekOpeningDestRect(passageSide, bounds, crop, sizeScale) {
+    const destH = bounds.h * 1.1 * sizeScale;
+    const destW = destH * (crop.sW / crop.sH);
+    const destY = bounds.maxY - destH;
+    const bleed = destW * 0.06;
+    const destX = passageSide === 'left'
+      ? bounds.minX - bleed
+      : bounds.maxX + bleed - destW;
+    return { destX, destY, destW, destH };
+  }
+
+  drawCreaturePeekSpriteHalf(type, range, w, h, alpha, side, destX, destY, destW, destH) {
+    const tr = this.themeRenderer();
+    const sprite = getCreatureSprite(tr.creatureSpriteSource, type);
+    if (!sprite) return false;
+
+    const { sx, sy, sW, sH } = this.peekSpriteSourceCrop(side, sprite);
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(sprite, sx, sy, sW, sH, destX, destY, destW, destH);
+    ctx.restore();
+    return true;
+  }
+
+  drawCreaturePeekImage(type, range, w, h, alpha, side, mode) {
+    const tr = this.themeRenderer();
+    const sprite = getCreatureSprite(tr.creatureSpriteSource, type);
+    if (!sprite) return;
+
+    const ctx = this.ctx;
+    const sizeScale = CREATURE_SPRITE_SCALE[type] ?? 1;
+    const crop = this.peekSpriteSourceCrop(side, sprite);
+
+    ctx.save();
+
+    if (mode === 'forward') {
+      ctx.beginPath();
+      ctx.rect(w * 0.28, 0, w * 0.44, h * 0.62);
+      ctx.clip();
+      this.drawCreatureSpriteImage(type, range, w, h, alpha, 0.85);
+      ctx.restore();
+      return;
+    }
+
+    if (mode === 'opening') {
+      const bounds = this.sideOpeningBounds(this.sideOpeningVerts(side, range, w, h));
+      const { destX, destY, destW, destH } = this.peekOpeningDestRect(side, bounds, crop, sizeScale);
+      this.drawCreaturePeekSpriteHalf(type, range, w, h, alpha, side, destX, destY, destW, destH);
+      ctx.restore();
+      return;
+    }
+
+    // Dead-end corner: wedge clip, corridor-facing half only.
+    this.clipPeekWedge(side, range, w, h);
+    const wedge = this.collectPeekWedgeVerts(side, range, w, h);
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const v of wedge) {
+      minX = Math.min(minX, v.x);
+      maxX = Math.max(maxX, v.x);
+      maxY = Math.max(maxY, v.y);
+    }
+    const wedgeH = Math.max(maxY - wedge[0].y, h * 0.08);
+    const destH = wedgeH * 1.35 * sizeScale;
+    const destW = destH * (crop.sW / crop.sH);
+    const destY = maxY - destH;
+    const bleed = destW * 0.06;
+    const destX = side === 'left' ? minX - bleed : maxX + bleed - destW;
+    this.drawCreaturePeekSpriteHalf(type, range, w, h, alpha, side, destX, destY, destW, destH);
+    ctx.restore();
+  }
+
   drawCreaturePeek(type, range, w, h, alpha, side, mode = 'edge') {
+    if (this.usesCreatureImages()) {
+      this.drawCreaturePeekImage(type, range, w, h, alpha, side, mode);
+      return;
+    }
+
     const ctx = this.ctx;
     ctx.save();
     ctx.lineCap = 'round';
@@ -877,14 +1083,14 @@ export class Renderer {
     }
   }
 
-  drawCreatureSpriteImage(type, range, w, h, alpha) {
+  drawCreatureSpriteImage(type, range, w, h, alpha, scaleMul = 1) {
     const tr = this.themeRenderer();
     const sprite = getCreatureSprite(tr.creatureSpriteSource, type);
     if (!sprite) return false;
 
     const ctx = this.ctx;
     const sizeScale = CREATURE_SPRITE_SCALE[type] ?? 1;
-    const scale = (SCALEF[range] / SCALEF[1]) * sizeScale;
+    const scale = (SCALEF[range] / SCALEF[1]) * sizeScale * scaleMul;
     const cx = w / 2;
     const cy = h * 0.46;
 
@@ -954,7 +1160,10 @@ export class Renderer {
     if (xShift) ctx.translate(xShift, 0);
 
     if (tr.creatureSpriteSource && !this.inverted) {
-      const drew = this.drawCreatureSpriteImage(type, range, w, h, alpha);
+      if (!opts.peek && xOff === 0) {
+        this.clipForwardCorridor(range, w, h);
+      }
+      const drew = this.drawCreatureSpriteImage(type, range, w, h, alpha, opts.peek ? 0.92 : 1);
       if (drew) {
         ctx.globalAlpha = 1;
         ctx.restore();
