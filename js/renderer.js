@@ -643,11 +643,11 @@ export class Renderer {
       && col === game.player.col;
 
     if (sameCell) {
-      // One step ahead the forward wall masks the creature's lower body. Draw
-      // same-cell creatures behind that wall too so they do not pop downward.
+      // Scale up to range 0 (closer) but draw behind the forward wall so the
+      // lower body stays masked like it was one step ahead — avoids a Y pop.
       this.drawViewportSliceWalls(game, slice, pdir, w, h, 'noForward');
       const c = game.creatures.list[cidx];
-      this.drawCreatureSprite(c.type, 1, w, h, alpha, 0, { sameCell: true });
+      this.drawCreatureSprite(c.type, 0, w, h, alpha, 0, { sameCell: true });
       drawnCreatures.add(cidx);
       this.drawViewportSliceWalls(game, slice, pdir, w, h, 'forwardOnly');
     } else {
