@@ -96,6 +96,66 @@ export class AudioEngine {
     source.stop(t + duration + 0.01);
   }
 
+  playBang() {
+    if (!this.enabled || this.muted) return;
+    const sampleRate = this.ctx.sampleRate;
+    const cpuHz = 890000;
+    const startPitch = 0x50;
+    const endPitch = 0x150;
+    const burstLen = 5;
+    const maxSamples = Math.ceil(sampleRate * 0.35);
+    const data = new Float32Array(maxSamples);
+
+    let sndRnd = 0x4a7f;
+    const snout = (raw) => {
+      const sample = ((raw >> 8) & 0xfc) / 126 - 1;
+      return Math.max(-1, Math.min(1, sample));
+    };
+    const snoise = () => {
+      let d = sndRnd;
+      let b = d & 0xff;
+      let a = (d >> 8) & 0xff;
+      let carry = (b & 0x80) ? 1 : 0;
+      b = (b << 1) & 0xff;
+      a = ((a << 1) | carry) & 0xff;
+      carry = (b & 0x80) ? 1 : 0;
+      b = (b << 1) & 0xff;
+      a = ((a << 1) | carry) & 0xff;
+      d = (((a << 8) | b) + sndRnd + 1) & 0xffff;
+      sndRnd = d;
+      return snout(d);
+    };
+
+    let idx = 0;
+    for (let pitch = startPitch; pitch < endPitch && idx < maxSamples; pitch += 2) {
+      const waitSamples = Math.max(1, Math.round((pitch * sampleRate) / cpuHz));
+      for (let burst = 0; burst < burstLen && idx < maxSamples; burst++) {
+        data[idx++] = snoise();
+        const holdEnd = Math.min(maxSamples, idx + waitSamples);
+        while (idx < holdEnd) {
+          data[idx++] = data[idx - 1];
+        }
+      }
+    }
+
+    const trimLen = Math.max(1, idx);
+    const buffer = this.ctx.createBuffer(1, trimLen, sampleRate);
+    buffer.copyToChannel(data.subarray(0, trimLen), 0);
+
+    const t = this.ctx.currentTime;
+    const source = this.ctx.createBufferSource();
+    source.buffer = buffer;
+
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.55, t);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + trimLen / sampleRate);
+
+    source.connect(gain);
+    gain.connect(this.master);
+    source.start(t);
+    source.stop(t + trimLen / sampleRate + 0.01);
+  }
+
   playSwordHit() {
     if (!this.enabled || this.muted) return;
     const t = this.ctx.currentTime;
@@ -154,22 +214,24 @@ export class AudioEngine {
       return;
     }
 
+    if (kind === 'bang' || kind === 'boom') {
+      this.playBang();
+      return;
+    }
+
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     const freqs = {
       squeak: 1200, rattle: 400, growl: 90, beoop: 220,
       klank: 180, grawl: 70, hiss: 800, kklank: 150,
       wraith: 300, snarl: 100, wizard: 60, clank: 200,
-      miss: 60, boom: 50, incant: 440,
+      miss: 60, incant: 440,
     };
     const f = freqs[kind] ?? 200;
-    osc.type = kind === 'boom' ? 'sawtooth' : 'square';
+    osc.type = 'square';
     osc.frequency.setValueAtTime(f, t);
-    if (kind === 'boom') {
-      osc.frequency.exponentialRampToValueAtTime(30, t + 0.4);
-    }
     gain.gain.setValueAtTime(0.08, t);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + (kind === 'boom' ? 0.5 : 0.15));
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.15);
     osc.connect(gain);
     gain.connect(this.master);
     osc.start(t);

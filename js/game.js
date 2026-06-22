@@ -560,9 +560,8 @@ export class Game {
     this.audio.playSound('hit');
     if (!result.alive) {
       this.renderer.triggerAttackFlash(this, cidx, FINALE_FLASH_MS);
-      c.dying = true;
       this.log(`HIT ${this.creatures.name(c.type)}.`);
-      this.beginFinale(FINALE_MS, () => this.onCreatureKill(cidx));
+      this.onCreatureKill(cidx);
     } else {
       this.renderer.triggerAttackFlash(this, cidx);
       this.log(`HIT ${this.creatures.name(c.type)}.`);
@@ -574,7 +573,7 @@ export class Game {
     const c = this.creatures.list[cidx];
     c.dying = false;
     const db = CREATURE_DB[c.type];
-    this.audio.playSound('boom');
+    this.audio.playSound('bang');
     this.log(`${this.creatures.name(c.type)} DIES.`);
     this.creatures.kill(cidx, this);
     this.player.power += db.hp >> 3;

@@ -134,9 +134,26 @@ helpDialog.addEventListener('close', () => {
   ui.focusCommand();
 });
 
+const ARROW_COMMANDS = {
+  ArrowUp: 'm',
+  ArrowRight: 't r',
+  ArrowLeft: 't l',
+  ArrowDown: 't a',
+};
+
 document.addEventListener('keydown', (e) => {
   if (themeDialog.open && themeUi?.handleKeydown?.(e)) {
     e.preventDefault();
+    return;
+  }
+
+  const arrowCmd = ARROW_COMMANDS[e.key];
+  if (arrowCmd) {
+    if (helpDialog.open || themeDialog.open || creaturesDialog.open) return;
+    if (game.dead || game.won) return;
+    e.preventDefault();
+    game.audio.resume();
+    game.handleCommand(arrowCmd);
     return;
   }
 

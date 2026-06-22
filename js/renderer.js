@@ -594,7 +594,7 @@ export class Renderer {
     ctx.clip();
   }
 
-  drawViewportSliceWalls(game, slice, pdir, w, h) {
+  drawViewportSliceWalls(game, slice, pdir, w, h, wallMask = 'all') {
     const { dungeon } = game;
     const { range, row, col, alpha, nb } = slice;
     const sides = [
@@ -604,12 +604,16 @@ export class Renderer {
     ];
 
     for (let i = 0; i < 3; i++) {
+      if (wallMask === 'noForward' && i === 1) continue;
+      if (wallMask === 'forwardOnly' && i !== 1) continue;
       const wt = sides[i];
       const drawType = wt === HF.SDR ? HF.WAL : wt;
       const vecs = WALL_VEC[drawType];
       const key = i === 0 ? 'L' : i === 1 ? 'F' : 'R';
       this.drawWallVectorList(wt, vecs[key], range, w, h, alpha);
     }
+
+    if (wallMask === 'forwardOnly') return;
 
     const vfi = dungeon.vfind(row, col);
     if (vfi !== null) {
@@ -632,12 +636,28 @@ export class Renderer {
     // Peeks behind this slice's walls — nearer walls paint over them next.
     this.drawCreaturePeeks(game, row, col, pdir, range, w, h, alpha, drawnCreatures, 'behind');
 
-    this.drawViewportSliceWalls(game, slice, pdir, w, h);
-
     const cidx = game.creatures.atCell(row, col);
-    if (cidx >= 0) {
-      this.drawCreatureSprite(game.creatures.list[cidx].type, range, w, h, alpha);
+    const sameCell = cidx >= 0
+      && range < 1
+      && row === game.player.row
+      && col === game.player.col;
+
+    if (sameCell) {
+      // One step ahead the forward wall masks the creature's lower body. Draw
+      // same-cell creatures behind that wall too so they do not pop downward.
+      this.drawViewportSliceWalls(game, slice, pdir, w, h, 'noForward');
+      const c = game.creatures.list[cidx];
+      this.drawCreatureSprite(c.type, 1, w, h, alpha, 0, { sameCell: true });
       drawnCreatures.add(cidx);
+      this.drawViewportSliceWalls(game, slice, pdir, w, h, 'forwardOnly');
+    } else {
+      this.drawViewportSliceWalls(game, slice, pdir, w, h);
+      if (cidx >= 0) {
+        this.drawCreatureSprite(
+          game.creatures.list[cidx].type, range, w, h, alpha,
+        );
+        drawnCreatures.add(cidx);
+      }
     }
 
     this.drawCreaturePeeks(game, row, col, pdir, range, w, h, alpha, drawnCreatures, 'front');
@@ -1040,6 +1060,14 @@ export class Renderer {
     return out;
   }
 
+  creatureWireFootY(type, range, w, h) {
+    const vla = CREATURE_VEC[type];
+    if (!vla || vla[0] === 0) return h * 0.72;
+    const verts = this.collectCreatureVerts(vla, range, w, h);
+    if (verts.length === 0) return h * 0.72;
+    return Math.max(...verts.map((v) => v.y));
+  }
+
   creatureDepthParams(range, w, h) {
     const s = SCALEF[range] / 200;
     const near = range <= 1;
@@ -1092,16 +1120,15 @@ export class Renderer {
     const scale = (SCALEF[range] / SCALEF[1]) * sizeScale * scaleMul;
     const cx = w / 2;
     const cy = h * 0.46;
-    let yBias = 0;
-    if (!opts.peek && !opts.portrait && scale > 1) {
-      yBias = cy * (scale - 1);
-    }
+    const footY = this.creatureWireFootY(type, range, w, h);
+    const footAtScale = cy + (this.creatureWireFootY(type, 1, w, h) - cy) * scale;
+    const yAdjust = footY - footAtScale;
 
     ctx.save();
     ctx.globalAlpha = alpha;
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    ctx.translate(cx, cy + yBias);
+    ctx.translate(cx, cy + yAdjust);
     ctx.scale(scale, scale);
     ctx.translate(-cx, -cy);
     // Sprites authored at 256×220 (or 512×440 for hi-res); same space as wireframe vectors.
@@ -1164,6 +1191,8 @@ export class Renderer {
 
     if (tr.creatureSpriteSource && !this.inverted) {
       if (!opts.peek && xOff === 0) {
+        // Keep the open top clip (matches one-step-ahead). A closed clip crops the
+        // head and makes the body look like it dropped when entering the player's cell.
         this.clipForwardCorridor(range, w, h, true);
       }
       const drew = this.drawCreatureSpriteImage(type, range, w, h, alpha, opts.peek ? 0.92 : 1, opts);
