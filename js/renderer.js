@@ -834,16 +834,24 @@ export class Renderer {
     return !!this.themeRenderer().creatureSpriteSource && !this.inverted;
   }
 
-  clipForwardCorridor(range, w, h) {
+  clipForwardCorridor(range, w, h, forImages = false) {
     const t = Math.min(1, range / 4);
     const topInset = w * (0.2 + t * 0.07);
     const botInset = w * (0.14 + t * 0.05);
     const ctx = this.ctx;
     ctx.beginPath();
-    ctx.moveTo(topInset, h * 0.34);
-    ctx.lineTo(w - topInset, h * 0.34);
-    ctx.lineTo(w - botInset, h);
-    ctx.lineTo(botInset, h);
+    if (forImages) {
+      // Photoreal sprites extend above wireframe heads (e.g. viper hood) — keep side walls, open the top.
+      ctx.moveTo(0, 0);
+      ctx.lineTo(w, 0);
+      ctx.lineTo(w - botInset, h);
+      ctx.lineTo(botInset, h);
+    } else {
+      ctx.moveTo(topInset, h * 0.34);
+      ctx.lineTo(w - topInset, h * 0.34);
+      ctx.lineTo(w - botInset, h);
+      ctx.lineTo(botInset, h);
+    }
     ctx.closePath();
     ctx.clip();
   }
@@ -905,7 +913,7 @@ export class Renderer {
       ctx.beginPath();
       ctx.rect(w * 0.28, 0, w * 0.44, h * 0.62);
       ctx.clip();
-      this.drawCreatureSpriteImage(type, range, w, h, alpha, 0.85);
+      this.drawCreatureSpriteImage(type, range, w, h, alpha, 0.85, { peek: true });
       ctx.restore();
       return;
     }
@@ -1074,7 +1082,7 @@ export class Renderer {
     }
   }
 
-  drawCreatureSpriteImage(type, range, w, h, alpha, scaleMul = 1) {
+  drawCreatureSpriteImage(type, range, w, h, alpha, scaleMul = 1, opts = {}) {
     const tr = this.themeRenderer();
     const sprite = getCreatureSprite(tr.creatureSpriteSource, type);
     if (!sprite) return false;
@@ -1084,12 +1092,16 @@ export class Renderer {
     const scale = (SCALEF[range] / SCALEF[1]) * sizeScale * scaleMul;
     const cx = w / 2;
     const cy = h * 0.46;
+    let yBias = 0;
+    if (!opts.peek && !opts.portrait && scale > 1) {
+      yBias = cy * (scale - 1);
+    }
 
     ctx.save();
     ctx.globalAlpha = alpha;
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    ctx.translate(cx, cy);
+    ctx.translate(cx, cy + yBias);
     ctx.scale(scale, scale);
     ctx.translate(-cx, -cy);
     // Sprites authored at 256×220 (or 512×440 for hi-res); same space as wireframe vectors.
@@ -1152,9 +1164,9 @@ export class Renderer {
 
     if (tr.creatureSpriteSource && !this.inverted) {
       if (!opts.peek && xOff === 0) {
-        this.clipForwardCorridor(range, w, h);
+        this.clipForwardCorridor(range, w, h, true);
       }
-      const drew = this.drawCreatureSpriteImage(type, range, w, h, alpha, opts.peek ? 0.92 : 1);
+      const drew = this.drawCreatureSpriteImage(type, range, w, h, alpha, opts.peek ? 0.92 : 1, opts);
       if (drew) {
         ctx.globalAlpha = 1;
         ctx.restore();
