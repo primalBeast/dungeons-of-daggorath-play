@@ -512,11 +512,6 @@ export class Renderer {
     return slices;
   }
 
-  drawSideWallOccluder(side, range, w, h, alpha) {
-    const vla = side === 'left' ? V.LWAL : V.RWAL;
-    this.fillWallTexture(HF.WAL, vla, range, w, h, alpha);
-  }
-
   collectPeekWedgeVerts(side, range, w, h) {
     const vla = side === 'left' ? V.LPEEK : V.RPEEK;
     const verts = [];
@@ -613,10 +608,6 @@ export class Renderer {
       const drawType = wt === HF.SDR ? HF.WAL : wt;
       const vecs = WALL_VEC[drawType];
       const key = i === 0 ? 'L' : i === 1 ? 'F' : 'R';
-      // Solid side face occludes peek sprites drawn in the prior pass (LPAS is an opening, not a mask).
-      if (this.wallTextureEnabled() && wt === HF.PAS && (i === 0 || i === 2)) {
-        this.drawSideWallOccluder(i === 0 ? 'left' : 'right', range, w, h, alpha);
-      }
       this.drawWallVectorList(wt, vecs[key], range, w, h, alpha);
     }
 

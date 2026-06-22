@@ -2,6 +2,7 @@
 
 import { CTYPES } from './data.js';
 import { stripMagentaFromImageData } from './chroma-key.js';
+import { NIGHTMARE_WALL_TILES } from './nightmare-wall-tiles.js';
 
 function spriteUrl(source, file) {
   const base = document.baseURI || window.location.href;
@@ -164,6 +165,18 @@ function processWallImage(img, key) {
 function loadWallTile(source, kind) {
   const key = wallKey(source, kind);
   if (wallCache.has(key)) return wallCache.get(key);
+
+  if (source === 'nightmare' && NIGHTMARE_WALL_TILES[kind]) {
+    const img = new Image();
+    wallReady.set(key, false);
+    img.onload = () => processWallImage(img, key);
+    img.onerror = () => {
+      wallReady.set(key, false);
+      console.warn('embedded wall texture failed', kind);
+    };
+    img.src = NIGHTMARE_WALL_TILES[kind];
+    return img;
+  }
 
   const file = WALL_KIND_FILES[kind];
   const img = new Image();
